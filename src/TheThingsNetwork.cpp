@@ -287,11 +287,11 @@ uint8_t receivedPort(const char *s)
   return port;
 }
 
-TheThingsNetwork::TheThingsNetwork(SerialType &modemStream, Stream &debugStream, ttn_fp_t fp, uint8_t sf, uint8_t fsb)
+TheThingsNetwork::TheThingsNetwork(SerialType &modemSerial, Stream &debugStream, ttn_fp_t fp, uint8_t sf, uint8_t fsb)
 {
+  this->modemSerial = &modemSerial;
+  this->modemSerial->setTimeout(10000);
   this->debugStream = &debugStream;
-  this->modemStream = &modemStream;
-  this->modemStream->setTimeout(10000);
   this->fp = fp;
   this->sf = sf;
   this->fsb = fsb;
@@ -351,9 +351,9 @@ void TheThingsNetwork::debugPrintMessage(uint8_t type, uint8_t index, const char
 
 void TheThingsNetwork::clearReadBuffer()
 {
-  while (modemStream->available())
+  while (modemSerial->available())
   {
-    modemStream->read();
+    modemSerial->read();
   }
 }
 
@@ -362,7 +362,7 @@ size_t TheThingsNetwork::readLine(char *buffer, size_t size)
   size_t read = 0;
   while (read == 0)
   {
-    read = modemStream->readBytesUntil('\n', buffer, size);
+    read = modemSerial->readBytesUntil('\n', buffer, size);
   }
   buffer[read - 1] = '\0'; // set \r to \0
   return read;
@@ -373,7 +373,7 @@ size_t TheThingsNetwork::readResponse(uint8_t prefixTable, uint8_t index, char *
   clearReadBuffer();
   sendCommand(prefixTable, 0, true, false);
   sendCommand(prefixTable, index, false, false);
-  modemStream->write(SEND_MSG);
+  modemSerial->write(SEND_MSG);
   return readLine(buffer, size);
 }
 
@@ -383,7 +383,7 @@ size_t TheThingsNetwork::readResponse(uint8_t prefixTable, uint8_t indexTable, u
   sendCommand(prefixTable, 0, true, false);
   sendCommand(MAC_TABLE, MAC_GET, true, false);
   sendCommand(indexTable, index, false, false);
-  modemStream->write(SEND_MSG);
+  modemSerial->write(SEND_MSG);
   return readLine(buffer, size);
 }
 
@@ -396,16 +396,16 @@ size_t TheThingsNetwork::checkModuleAvailable()
 void TheThingsNetwork::autoBaud()
 {
   // Courtesy of @jpmeijers
-  modemStream->setTimeout(2000);
+  modemSerial->setTimeout(2000);
   uint8_t attempts = 10;
   size_t length = 0;
   while (attempts-- && length == 0)
   {
     delay(100);
     // Send break + Autobaud 
-    modemStream->write((byte)0x00);
-    modemStream->write(0x55);
-    modemStream->write(SEND_MSG);
+    modemSerial->write((byte)0x00);
+    modemSerial->write(0x55);
+    modemSerial->write(SEND_MSG);
     // check we can talk
     length = checkModuleAvailable();
     
@@ -414,7 +414,7 @@ void TheThingsNetwork::autoBaud()
   }
   delay(100);
   clearReadBuffer();
-  modemStream->setTimeout(10000);
+  modemSerial->setTimeout(10000);
 }
 
 bool TheThingsNetwork::isSleeping()
@@ -429,20 +429,20 @@ void TheThingsNetwork::wake()
   {
     // Send a 0 at lower speed to be sure always received
     // as a character a 57600 baud rate
-    modemStream->flush();
+    modemSerial->flush();
 #ifdef HARDWARE_UART
-    modemStream->begin(2400);
+    modemSerial->begin(2400);
 #endif
-    modemStream->write((uint8_t) 0x00);
-    modemStream->flush();
+    modemSerial->write((uint8_t) 0x00);
+    modemSerial->flush();
     delay(20);
     // set baudrate back to normal and send autobaud
 #ifdef HARDWARE_UART
-    modemStream->begin(57600);
+    modemSerial->begin(57600);
 #endif
-    modemStream->write((uint8_t)0x55);
-    modemStream->flush();
-    modemStream->write(SEND_MSG);
+    modemSerial->write((uint8_t)0x55);
+    modemSerial->flush();
+    modemSerial->write(SEND_MSG);
     if (checkModuleAvailable() > 0) {
       baudDetermined = true;
     }
@@ -481,7 +481,7 @@ void TheThingsNetwork::saveState()
   debugPrint(SENDING);
   sendCommand(MAC_TABLE, MAC_PREFIX, true);
   sendCommand(MAC_TABLE, MAC_SAVE, false);
-  modemStream->write(SEND_MSG);
+  modemSerial->write(SEND_MSG);
   debugPrintLn();
   waitForOk();
 }
@@ -863,10 +863,10 @@ void TheThingsNetwork::sendCommand(uint8_t table, uint8_t index, bool appendSpac
   default:
     return;
   }
-  modemStream->write(command);
+  modemSerial->write(command);
   if (appendSpace)
   {
-    modemStream->write(" ");
+    modemSerial->write(" ");
   }
   if (print)
   {
@@ -882,8 +882,8 @@ bool TheThingsNetwork::sendMacSet(uint8_t index, const char *value)
   sendCommand(MAC_TABLE, MAC_PREFIX, true);
   sendCommand(MAC_TABLE, MAC_SET, true);
   sendCommand(MAC_GET_SET_TABLE, index, true);
-  modemStream->write(value);
-  modemStream->write(SEND_MSG);
+  modemSerial->write(value);
+  modemSerial->write(SEND_MSG);
   debugPrintLn(value);
   return waitForOk();
 }
@@ -919,10 +919,10 @@ bool TheThingsNetwork::sendChSet(uint8_t index, uint8_t channel, const char *val
   sendCommand(MAC_TABLE, MAC_SET, true);
   sendCommand(MAC_GET_SET_TABLE, MAC_CH, true);
   sendCommand(MAC_CH_TABLE, index, true);
-  modemStream->write(ch);
-  modemStream->write(" ");
-  modemStream->write(value);
-  modemStream->write(SEND_MSG);
+  modemSerial->write(ch);
+  modemSerial->write(" ");
+  modemSerial->write(value);
+  modemSerial->write(SEND_MSG);
   debugPrint(channel);
   debugPrint(F(" "));
   debugPrintLn(value);
@@ -936,7 +936,7 @@ bool TheThingsNetwork::sendJoinSet(uint8_t type)
   sendCommand(MAC_TABLE, MAC_PREFIX, true);
   sendCommand(MAC_TABLE, MAC_JOIN, true);
   sendCommand(MAC_JOIN_TABLE, type, false);
-  modemStream->write(SEND_MSG);
+  modemSerial->write(SEND_MSG);
   debugPrintLn();
   return waitForOk();
 }
@@ -967,8 +967,8 @@ bool TheThingsNetwork::sendPayload(uint8_t mode, uint8_t port, uint8_t *payload,
     sport[0] = port + 48;
     sport[1] = '\0';
   }
-  modemStream->write(sport);
-  modemStream->print(" ");
+  modemSerial->write(sport);
+  modemSerial->print(" ");
   debugPrint(sport);
   debugPrint(F(" "));
   uint8_t i = 0;
@@ -976,18 +976,18 @@ bool TheThingsNetwork::sendPayload(uint8_t mode, uint8_t port, uint8_t *payload,
   {
     if (payload[i] < 16)
     {
-      modemStream->print("0");
-      modemStream->print(payload[i], HEX);
+      modemSerial->print("0");
+      modemSerial->print(payload[i], HEX);
       debugPrint(F("0"));
       debugPrint(payload[i], HEX);
     }
     else
     {
-      modemStream->print(payload[i], HEX);
+      modemSerial->print(payload[i], HEX);
       debugPrint(payload[i], HEX);
     }
   }
-  modemStream->write(SEND_MSG);
+  modemSerial->write(SEND_MSG);
   debugPrintLn();
   return waitForOk();
 }
@@ -1004,8 +1004,8 @@ void TheThingsNetwork::sleep(uint32_t mseconds)
   sendCommand(SYS_TABLE, SYS_SLEEP, true);
 
   sprintf(buffer, "%lu", mseconds);
-  modemStream->write(buffer);
-  modemStream->write(SEND_MSG);
+  modemSerial->write(buffer);
+  modemSerial->write(SEND_MSG);
   debugPrintLn(buffer);
 
   // to be determined back on wake up
@@ -1021,8 +1021,8 @@ void TheThingsNetwork::linkCheck(uint16_t seconds)
   sendCommand(MAC_GET_SET_TABLE, MAC_LINKCHK, true);
 
   sprintf(buffer, "%u", seconds);
-  modemStream->write(buffer);
-  modemStream->write(SEND_MSG);
+  modemSerial->write(buffer);
+  modemSerial->write(SEND_MSG);
   debugPrintLn(buffer);
   waitForOk();  
 }
